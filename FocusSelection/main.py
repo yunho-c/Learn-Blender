@@ -1,7 +1,8 @@
 import bpy
 import os
 
-bpy.context.scene.render.engine = 'CYCLES'
+bpy.context.scene.render.engine = "CYCLES"
+bpy.context.scene.cycles.samples = 256
 
 def apply_glow_effect(object_name="Cube", pass_index=1, glare_size=9):
     scene = bpy.context.scene
@@ -26,34 +27,39 @@ def apply_glow_effect(object_name="Cube", pass_index=1, glare_size=9):
     # --- Create compositor nodes ---
     rlayers = tree.nodes.new("CompositorNodeRLayers")
     id_mask = tree.nodes.new("CompositorNodeIDMask")
+    blur = tree.nodes.new("CompositorNodeBlur")
+    sub = tree.nodes.new("CompositorNodeMixRGB")
     glare = tree.nodes.new("CompositorNodeGlare")
     mix = tree.nodes.new("CompositorNodeMixRGB")
     comp = tree.nodes.new("CompositorNodeComposite")
 
     # --- Configure nodes ---
     id_mask.index = pass_index
-    glare.glare_type = 'FOG_GLOW'
-    glare.quality = 'HIGH'
+
+    blur.filter_type = "GAUSS"
+    blur.size_x = 25  # Increase for thicker glow
+    blur.size_y = 25
+    blur.use_relative = False
+
+    sub.blend_type = "SUBTRACT"
+    sub.inputs[0].default_value = 1.0  # full strength
+
+    glare.glare_type = "FOG_GLOW"
+    glare.quality = "HIGH"
     glare.size = glare_size
     glare.mix = 0.0
-    mix.blend_type = 'ADD'
-
-    # --- Position (optional) ---
-    rlayers.location = (-500, 200)
-    id_mask.location = (-300, 0)
-    glare.location = (-100, 200)
-    mix.location = (200, 100)
-    comp.location = (400, 100)
+    mix.blend_type = "ADD"
 
     # --- Link nodes ---
     links = tree.links
-    links.new(rlayers.outputs["Image"], mix.inputs[1])
     links.new(rlayers.outputs["IndexOB"], id_mask.inputs["ID value"])
-    links.new(id_mask.outputs["Alpha"], glare.inputs["Image"])
-    links.new(glare.outputs["Image"], mix.inputs[2])
+    links.new(id_mask.outputs["Alpha"], blur.inputs["Image"])  # Blur mask
+    links.new(blur.outputs["Image"], sub.inputs[1])  # Blurred
+    links.new(id_mask.outputs["Alpha"], sub.inputs[2])  # Original mask
+    links.new(sub.outputs["Image"], glare.inputs["Image"])  # Edge -> Glare
+    links.new(glare.outputs["Image"], mix.inputs[2])  # Glow -> Mix
+    links.new(rlayers.outputs["Image"], mix.inputs[1])  # Base image
     links.new(mix.outputs["Image"], comp.inputs["Image"])
-
-    print("Compositor glow setup complete.")
 
 
 def main():
