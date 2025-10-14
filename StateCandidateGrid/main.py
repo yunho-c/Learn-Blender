@@ -1,7 +1,10 @@
-import bpy
 import math
 import os
 from pathlib import Path
+
+import bpy
+import numpy as np
+from PIL import Image
 
 output_directory = str(Path(__file__).parent)
 
@@ -54,6 +57,72 @@ def setup_scene():
     return suzanne
 
 
+def render(output_path=None):
+    """
+    Renders the current scene, either saving to a file or returning as a NumPy array.
+
+    Args:
+        output_path (str, optional): If provided, the path to save the rendered image.
+                                     If None, the function returns a NumPy array.
+                                     Defaults to None.
+
+    Returns:
+        np.ndarray or None: If output_path is None, returns a NumPy array of the
+                            rendered image. Otherwise, returns None.
+    """
+    if output_path:
+        bpy.context.scene.render.filepath = output_path
+        bpy.ops.render.render(write_still=True)
+        return None
+    else:
+        bpy.ops.render.render(write_still=False)
+        render_result = bpy.data.images.get("Render Result")
+        if not render_result:
+            raise RuntimeError("Render result not found. The render may have failed.")
+
+        width = render_result.width
+        height = render_result.height
+        pixels = np.array(render_result.pixels[:])
+
+        image = pixels.reshape((height, width, 4))
+        image = np.flipud(image)
+        return image
+
+
+def create_collage(image_paths, output_path):
+    """
+    Creates a 2x2 collage from a list of 4 images using Pillow.
+
+    Args:
+        image_paths (list of str): A list of 4 paths to the input images.
+        output_path (str): The path to save the collage image.
+    """
+    if Image is None:
+        print("\nCollage creation skipped: Pillow library not found.")
+        print("Please install it to enable this feature: pip install Pillow")
+        return
+
+    if len(image_paths) != 4:
+        raise ValueError("This function requires exactly 4 images for a 2x2 collage.")
+
+    images = [Image.open(p) for p in image_paths]
+
+    # Assuming all images are the same size
+    width, height = images[0].size
+    collage_width = 2 * width
+    collage_height = 2 * height
+    collage_image = Image.new("RGBA", (collage_width, collage_height))
+
+    # Paste images into the collage
+    collage_image.paste(images[0], (0, 0))
+    collage_image.paste(images[1], (width, 0))
+    collage_image.paste(images[2], (0, height))
+    collage_image.paste(images[3], (width, height))
+
+    collage_image.save(output_path)
+    print(f"\nCollage saved to {output_path}")
+
+
 def main():
     """
     Main function to run the rendering and saving process.
@@ -64,8 +133,14 @@ def main():
     # Ensure the output directory exists
     os.makedirs(output_directory, exist_ok=True)
 
+    # Set render settings
+    bpy.context.scene.render.engine = "CYCLES"
+    bpy.context.scene.cycles.samples = 128
+    bpy.context.scene.render.film_transparent = True
+
     # Define the angles for the four orthogonal rotations
     angles_degrees = [0, 90, 180, 270]
+    image_filepaths = []
 
     print("Starting render loop for Suzanne...")
 
@@ -76,21 +151,15 @@ def main():
         # Set the Z-axis rotation (up-axis)
         obj_to_rotate.rotation_euler[2] = rad
 
-        # Define the output file path
+        # Define the output file path and render to file
         filepath = os.path.join(output_directory, f"suzanne_{i:02d}_{angle}deg.png")
-        bpy.context.scene.render.filepath = filepath
-
-        # Set render engine to Cycles for a better look (optional, EEVEE is faster)
-        bpy.context.scene.render.engine = "CYCLES"
-        bpy.context.scene.cycles.samples = 128
-
-        # Make the background transparent
-        bpy.context.scene.render.film_transparent = True
-
-        # Render the image and save it
-        bpy.ops.render.render(write_still=True)
+        render(output_path=filepath)
+        image_filepaths.append(filepath)
 
         print(f"Saved render for {angle}° to {filepath}")
+
+    collage_output_path = os.path.join(output_directory, "suzanne_collage.png")
+    create_collage(image_filepaths, collage_output_path)
 
     # Optional: Reset rotation back to zero
     obj_to_rotate.rotation_euler[2] = 0
