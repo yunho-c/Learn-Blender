@@ -1,29 +1,60 @@
 import bpy
 import os
 
+bpy.context.scene.render.engine = 'CYCLES'
+
 def apply_glow_effect(object_name="Cube", pass_index=1, glare_size=9):
-    """
-    This is the same core logic from apply_glow_headless.py,
-    now running directly within this script's environment.
-    """
-    try:
-        scene = bpy.context.scene # Context is now directly available
-        obj = bpy.data.objects[object_name]
-    except (KeyError, IndexError):
+    scene = bpy.context.scene
+    obj = bpy.data.objects.get(object_name)
+    if not obj:
         print(f"Error: Object '{object_name}' not found.")
         return
 
     print(f"Setting up glow for object: '{obj.name}'")
     obj.pass_index = pass_index
-    bpy.context.view_layer.use_pass_object_index = True
 
-    # --- Build Compositor Node Tree (identical logic) ---
+    # --- Enable object index pass BEFORE node creation ---
+    view_layer = bpy.context.view_layer
+    view_layer.use_pass_object_index = True
+    view_layer.update()
+
+    # --- Enable compositor and reset nodes ---
     scene.use_nodes = True
     tree = scene.node_tree
-    for node in tree.nodes:
-        tree.nodes.remove(node)
-    # ... (node creation and linking logic remains the same) ...
-    print("Compositor setup complete.")
+    tree.nodes.clear()
+
+    # --- Create compositor nodes ---
+    rlayers = tree.nodes.new("CompositorNodeRLayers")
+    id_mask = tree.nodes.new("CompositorNodeIDMask")
+    glare = tree.nodes.new("CompositorNodeGlare")
+    mix = tree.nodes.new("CompositorNodeMixRGB")
+    comp = tree.nodes.new("CompositorNodeComposite")
+
+    # --- Configure nodes ---
+    id_mask.index = pass_index
+    glare.glare_type = 'FOG_GLOW'
+    glare.quality = 'HIGH'
+    glare.size = glare_size
+    glare.mix = 0.0
+    mix.blend_type = 'ADD'
+
+    # --- Position (optional) ---
+    rlayers.location = (-500, 200)
+    id_mask.location = (-300, 0)
+    glare.location = (-100, 200)
+    mix.location = (200, 100)
+    comp.location = (400, 100)
+
+    # --- Link nodes ---
+    links = tree.links
+    links.new(rlayers.outputs["Image"], mix.inputs[1])
+    links.new(rlayers.outputs["IndexOB"], id_mask.inputs["ID value"])
+    links.new(id_mask.outputs["Alpha"], glare.inputs["Image"])
+    links.new(glare.outputs["Image"], mix.inputs[2])
+    links.new(mix.outputs["Image"], comp.inputs["Image"])
+
+    print("Compositor glow setup complete.")
+
 
 def main():
     # --- Configuration ---
@@ -42,9 +73,8 @@ def main():
     # Call the setup function directly
     apply_glow_effect(TARGET_OBJECT)
 
-    # Configure and execute the render
-    bpy.context.scene.render.filepath = OUTPUT_IMAGE_PATH
-    bpy.context.scene.render.image_settings.file_format = 'PNG'
+    # Execute the render. The File Output node will handle saving.
+    # We still set the main render output path, though it's not strictly needed for the final image.
     print(f"Rendering scene to: {OUTPUT_IMAGE_PATH}")
     bpy.ops.render.render(write_still=True)
     print("Render complete.")
