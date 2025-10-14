@@ -1,2 +1,77 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Git Attributes for Media and Blender Projects
+# ------------------------------------------------
+# This file helps Git manage different file types more effectively,
+# especially for projects with large binary assets. It uses Git LFS
+# (Large File Storage) for media and Blender files to keep the core
+# repository size small and fast.
+
+# Tell Git to use LF line endings for text files to maintain consistency
+# across different operating systems.
+* text=auto eol=lf
+
+# === Blender Files ===
+# Treat .blend files as binary files and track them with Git LFS.
+# The `diff=blender` attribute can be paired with a custom diff tool
+# configured in your .gitconfig to show changes between versions.
+*.blend filter=lfs diff=blender merge=binary -text
+*.blend1 filter=lfs diff=blender merge=binary -text
+*.blend2 filter=lfs diff=blender merge=binary -text
+
+# Lock .blend files to prevent merge conflicts on binary assets.
+# This is useful for teams where only one person should edit a file at a time.
+# To use this, your Git LFS server must support file locking.
+*.blend lockable
+
+# Auto-generated backup and junk files from Blender.
+# These are typically ignored in a .gitignore file, but you can
+# explicitly mark them as binary here if needed for any reason.
+*.blend.zip merge=binary -text
+*.blend.gz merge=binary -text
+*.swp merge=binary -text
+
+# === Image Files ===
+# Track common image formats with Git LFS.
+*.jpg filter=lfs diff=lfs merge=binary -text lockable
+*.jpeg filter=lfs diff=lfs merge=binary -text lockable
+*.png filter=lfs diff=lfs merge=binary -text lockable
+*.gif filter=lfs diff=lfs merge=binary -text lockable
+*.bmp filter=lfs diff=lfs merge=binary -text lockable
+*.tga filter=lfs diff=lfs merge=binary -text lockable
+*.tif filter=lfs diff=lfs merge=binary -text lockable
+*.tiff filter=lfs diff=lfs merge=binary -text lockable
+*.psd filter=lfs diff=lfs merge=binary -text lockable
+*.xcf filter=lfs diff=lfs merge=binary -text lockable
+*.exr filter=lfs diff=lfs merge=binary -text lockable
+*.hdr filter=lfs diff=lfs merge=binary -text lockable
+*.svg -text
+
+# === Video Files ===
+# Track common video formats with Git LFS.
+*.mp4 filter=lfs diff=lfs merge=binary -text lockable
+*.mov filter=lfs diff=lfs merge=binary -text lockable
+*.avi filter=lfs diff=lfs merge=binary -text lockable
+*.mkv filter=lfs diff=lfs merge=binary -text lockable
+*.webm filter=lfs diff=lfs merge=binary -text lockable
+*.flv filter=lfs diff=lfs merge=binary -text lockable
+*.wmv filter=lfs diff=lfs merge=binary -text lockable
+
+# === Audio Files ===
+# Track common audio formats with Git LFS.
+*.mp3 filter=lfs diff=lfs merge=binary -text lockable
+*.wav filter=lfs diff=lfs merge=binary -text lockable
+*.ogg filter=lfs diff=lfs merge=binary -text lockable
+*.flac filter=lfs diff=lfs merge=binary -text lockable
+*.aif filter=lfs diff=lfs merge=binary -text lockable
+*.aiff filter=lfs diff=lfs merge=binary -text lockable
+
+# === 3D Model Formats ===
+# Track other common 3D model formats with Git LFS.
+*.fbx filter=lfs diff=lfs merge=binary -text lockable
+*.obj filter=lfs diff=lfs merge=binary -text lockable
+*.gltf filter=lfs diff=lfs merge=binary -text lockable
+*.glb filter=lfs diff=lfs merge=binary -text lockable
+*.3ds filter=lfs diff=lfs merge=binary -text lockable
+*.dae filter=lfs diff=lfs merge=binary -text lockable
