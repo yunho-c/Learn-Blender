@@ -49,7 +49,15 @@ bpy.ops.rigidbody.object_add()
 cube.rigid_body.type = "ACTIVE"
 cube.rigid_body.collision_shape = "BOX"
 
+# --- Tweak Physics Properties to Reduce Bouncing ---
+# Increase damping to make the cube lose energy faster, preventing a large bounce.
+# A higher value absorbs the "pop" from the overlap correction.
+cube.rigid_body.linear_damping = 1.0
+cube.rigid_body.angular_damping = 1.0
+
+
 print("Created an active cube overlapping the plane.")
+print("Increased damping to reduce overshoot.")
 
 # --- Animation & Timeline Setup ---
 # Set the timeline to the first frame so the simulation starts from the beginning.
@@ -59,6 +67,12 @@ bpy.context.scene.frame_end = 60  # We'll render a 60-frame animation
 # Ensure the rigid body world is present (usually is by default)
 if not bpy.context.scene.rigidbody_world:
     bpy.ops.rigidbody.world_add()
+
+# Increase the solver iterations for a more accurate and stable simulation.
+# This helps the solver find a better solution for the initial overlap
+# without applying an excessive corrective force.
+bpy.context.scene.rigidbody_world.solver_iterations = 30
+print("Increased rigid body solver iterations for stability.")
 
 # --- Bake Physics ---
 # Baking is essential for rendering animations with physics in standalone mode.
