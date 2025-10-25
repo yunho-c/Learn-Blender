@@ -2,6 +2,7 @@ import random
 from typing import Dict, Iterable, Optional, Sequence, Tuple
 
 import bpy
+from mathutils import Vector
 
 
 def _iter_interface_items(items: Iterable) -> Iterable:
@@ -11,6 +12,32 @@ def _iter_interface_items(items: Iterable) -> Iterable:
         children = getattr(item, "items_tree", None)
         if children:
             yield from _iter_interface_items(children)
+
+
+def _view3d_context_override() -> Dict[str, object]:
+    """Return a context override suitable for running VIEW3D operators."""
+    wm = bpy.context.window_manager
+    if wm is None:
+        raise RuntimeError("No WindowManager available to override context.")
+
+    for window in wm.windows:
+        screen = window.screen
+        scene = window.scene
+        view_layer = window.view_layer
+        for area in screen.areas:
+            if area.type == 'VIEW_3D':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        return {
+                            "window": window,
+                            "screen": screen,
+                            "area": area,
+                            "region": region,
+                            "scene": scene,
+                            "view_layer": view_layer,
+                        }
+
+    raise RuntimeError("Could not find a VIEW_3D area to override the context for the Door It operator.")
 
 
 class DoorItInteriorController:
@@ -120,8 +147,8 @@ def apply_door_settings(
 ) -> Dict[str, object]:
     """Apply a batch of settings to the Door It! Interior Geometry Nodes modifier.
 
-    Returns a dictionary summarizing the values that were applied. If ``trigger_rebuild`` is
-    ``True`` the object's dependency graph is updated so the viewport reflects the changes.
+    Returns a dictionary summarizing the values that were applied. If `trigger_rebuild` is
+    `True`, the object's dependency graph is updated so the viewport reflects the changes.
     """
     controller = DoorItInteriorController(obj=obj, modifier_name=modifier_name)
     results: Dict[str, object] = {"object": controller.object.name}
@@ -150,6 +177,127 @@ def apply_door_settings(
     return results
 
 
+def create_door(
+    name: str,
+    location: Sequence[float],
+    width: Optional[float] = None,
+    height: Optional[float] = None,
+    door_type: Optional[int] = None,
+    randomize_type: bool = False,
+    paint_color: Optional[Sequence[float]] = None,
+    randomize_color: bool = False,
+    alpha: float = 1.0,
+    modifier_name: str = "GeometryNodes",
+    trigger_rebuild: bool = True,
+) -> Dict[str, object]:
+    """Create a new Door It! Interior object at `location` and configure its parameters.
+
+    If an object with `name` already exists in the blend file but is not part of the active
+    scene it will be linked in, moved to `location` and have the requested settings applied.
+    If it is already present in the scene the call becomes a no-op.
+    """
+    scene = bpy.context.scene
+    if scene is None:
+        raise RuntimeError("No active scene available to create the door.")
+
+    if len(location) != 3:
+        raise ValueError("Location must be a 3-component iterable (x, y, z).")
+
+    location_vec = Vector(location)
+
+    existing_obj = bpy.data.objects.get(name)
+    if existing_obj is not None:
+        in_scene = existing_obj.name in scene.objects
+        if not in_scene:
+            scene.collection.objects.link(existing_obj)
+            existing_obj.location = location_vec
+            settings_summary = apply_door_settings(
+                width=width,
+                height=height,
+                door_type=door_type,
+                randomize_type=randomize_type,
+                paint_color=paint_color,
+                randomize_color=randomize_color,
+                alpha=alpha,
+                obj=existing_obj,
+                modifier_name=modifier_name,
+                trigger_rebuild=trigger_rebuild,
+            )
+            return {
+                "object": existing_obj.name,
+                "created": False,
+                "linked": True,
+                "settings": settings_summary,
+            }
+        return {"object": existing_obj.name, "created": False, "linked": False}
+
+    cursor = scene.cursor
+    previous_cursor_location = cursor.location.copy()
+    pre_existing_objects = set(bpy.data.objects)
+
+    try:
+        cursor.location = location_vec
+        try:
+            override = _view3d_context_override()
+        except RuntimeError:
+            override = None
+
+        if override:
+            with bpy.context.temp_override(**override):
+                result = bpy.ops.mesh.add_door()
+        else:
+            result = bpy.ops.mesh.add_door()
+
+        if result != {'FINISHED'}:
+            raise RuntimeError(f"Door creation operator returned {result!r}.")
+    finally:
+        cursor.location = previous_cursor_location
+
+    new_objects = [obj for obj in bpy.data.objects if obj not in pre_existing_objects]
+    # print(f"{new_objects=}") # DEBUG (don't delete)
+    if not new_objects:
+        raise RuntimeError("Door creation operator did not add any objects to the scene.")
+
+    door_object = None
+    for obj in new_objects:
+        if any(mod.type == 'NODES' for mod in obj.modifiers):
+            door_object = obj
+            break
+
+    if door_object is None:
+        for obj in new_objects:
+            if obj.name == "Door It! Interior":
+                door_object = obj
+                break
+
+    if door_object is None:
+        raise RuntimeError(
+            "Could not locate the Door It! Interior object with a Geometry Nodes modifier among created objects."
+        )
+
+    door_object.location = location_vec
+    door_object.name = name
+
+    settings_summary = apply_door_settings(
+        width=width,
+        height=height,
+        door_type=door_type,
+        randomize_type=randomize_type,
+        paint_color=paint_color,
+        randomize_color=randomize_color,
+        alpha=alpha,
+        obj=door_object,
+        modifier_name=modifier_name,
+        trigger_rebuild=trigger_rebuild,
+    )
+
+    return {
+        "object": door_object.name,
+        "created": True,
+        "settings": settings_summary,
+    }
+
+
 if __name__ == "__main__":
     # Example usage: tweak values here and run the script from Blender's text editor.
     SETTINGS = {
@@ -160,10 +308,20 @@ if __name__ == "__main__":
         "paint_color": None,      # Provide (R, G, B[, A]) or leave None to randomize
         "randomize_color": True,  # Ignored when 'paint_color' is provided
         "alpha": 1.0,             # Alpha channel for randomized colors
-        "obj": None,              # Target object; None uses the active object
         "modifier_name": "GeometryNodes",
         "trigger_rebuild": True,  # Forces a depsgraph update after applying settings
     }
 
-    applied = apply_door_settings(**SETTINGS)
-    print("Applied Door It! Interior settings:", applied)
+    NEW_DOOR = {
+        "name": "DoorIt_Example",
+        "location": (0.0, 0.0, 0.0),
+        **SETTINGS,
+    }
+
+    created = create_door(**NEW_DOOR)
+    print("Create door summary:", created)
+
+    if created["created"] is False and bpy.data.objects.get(created["object"]):
+        # Optionally re-run settings on the already existing door.
+        applied = apply_door_settings(obj=bpy.data.objects[created["object"]], **SETTINGS)
+        print("Updated existing Door It! Interior settings:", applied)
