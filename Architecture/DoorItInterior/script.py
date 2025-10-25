@@ -86,6 +86,32 @@ class DoorItInteriorController:
         self.modifier[item.identifier] = numeric_value
         return numeric_value
 
+    def _set_int(self, label: str, value: int) -> int:
+        item = self._get_interface_item(label)
+        int_value = int(value)
+        min_value = getattr(item, "min_value", None)
+        max_value = getattr(item, "max_value", None)
+
+        if min_value is not None:
+            int_value = max(int_value, int(min_value))
+        if max_value is not None:
+            int_value = min(int_value, int(max_value))
+
+        self.modifier[item.identifier] = int_value
+        return int_value
+
+    def _randomize_int(self, label: str) -> int:
+        item = self._get_interface_item(label)
+        min_value = int(getattr(item, "min_value", 0))
+        max_value_attr = getattr(item, "max_value", None)
+        if max_value_attr is None:
+            max_value = min_value
+        else:
+            max_value = int(max_value_attr)
+        choice = random.randint(min_value, max_value)
+        self.modifier[item.identifier] = choice
+        return choice
+
     def set_width(self, value: float) -> float:
         """Set the door width socket in meters. Returns the applied value (clamped if needed)."""
         return self._set_numeric("Width", value)
@@ -96,22 +122,27 @@ class DoorItInteriorController:
 
     def set_type(self, value: int) -> int:
         """Set the style/type index. Returns the applied integer value."""
-        item = self._get_interface_item("Type")
-        int_value = int(value)
-        min_value = int(getattr(item, "min_value", int_value))
-        max_value = int(getattr(item, "max_value", int_value))
-        clamped_value = max(min_value, min(int_value, max_value))
-        self.modifier[item.identifier] = clamped_value
-        return clamped_value
+        return self._set_int("Type", value)
 
     def randomize_type(self) -> int:
         """Pick a random valid style index and apply it."""
-        item = self._get_interface_item("Type")
-        min_value = int(getattr(item, "min_value", 0))
-        max_value = int(getattr(item, "max_value", min_value))
-        choice = random.randint(min_value, max_value)
-        self.modifier[item.identifier] = choice
-        return choice
+        return self._randomize_int("Type")
+
+    def set_handle_type(self, value: int) -> int:
+        """Set the handle style index."""
+        return self._set_int("Handle Type", value)
+
+    def randomize_handle_type(self) -> int:
+        """Pick a random valid handle style index and apply it."""
+        return self._randomize_int("Handle Type")
+
+    def set_material(self, value: int) -> int:
+        """Set the material index."""
+        return self._set_int("Material", value)
+
+    def randomize_material(self) -> int:
+        """Pick a random valid material index and apply it."""
+        return self._randomize_int("Material")
 
     def set_paint_color(self, color: Sequence[float]) -> Tuple[float, float, float, float]:
         """Set the RGBA paint color. Returns the applied color tuple."""
@@ -133,11 +164,15 @@ class DoorItInteriorController:
         return rgba
 
 
-def apply_door_settings(
+def apply_interior_door_settings(
     width: Optional[float] = None,
     height: Optional[float] = None,
     door_type: Optional[int] = None,
     randomize_type: bool = False,
+    handle_type: Optional[int] = None,
+    randomize_handle: bool = False,
+    material: Optional[int] = None,
+    randomize_material: bool = False,
     paint_color: Optional[Sequence[float]] = None,
     randomize_color: bool = False,
     alpha: float = 1.0,
@@ -147,8 +182,8 @@ def apply_door_settings(
 ) -> Dict[str, object]:
     """Apply a batch of settings to the Door It! Interior Geometry Nodes modifier.
 
-    Returns a dictionary summarizing the values that were applied. If `trigger_rebuild` is
-    `True`, the object's dependency graph is updated so the viewport reflects the changes.
+    Returns a dictionary summarizing the values that were applied. If ``trigger_rebuild`` is
+    ``True`` the object's dependency graph is updated so the viewport reflects the changes.
     """
     controller = DoorItInteriorController(obj=obj, modifier_name=modifier_name)
     results: Dict[str, object] = {"object": controller.object.name}
@@ -162,6 +197,16 @@ def apply_door_settings(
         results["type"] = controller.set_type(door_type)
     elif randomize_type:
         results["type"] = controller.randomize_type()
+
+    if handle_type is not None:
+        results["handle_type"] = controller.set_handle_type(handle_type)
+    elif randomize_handle:
+        results["handle_type"] = controller.randomize_handle_type()
+
+    if material is not None:
+        results["material"] = controller.set_material(material)
+    elif randomize_material:
+        results["material"] = controller.randomize_material()
 
     if paint_color is not None:
         results["paint_color"] = controller.set_paint_color(paint_color)
@@ -177,23 +222,27 @@ def apply_door_settings(
     return results
 
 
-def create_door(
+def create_interior_door(
     name: str,
     location: Sequence[float],
     width: Optional[float] = None,
     height: Optional[float] = None,
     door_type: Optional[int] = None,
     randomize_type: bool = False,
+    handle_type: Optional[int] = None,
+    randomize_handle: bool = False,
+    material: Optional[int] = None,
+    randomize_material: bool = False,
     paint_color: Optional[Sequence[float]] = None,
     randomize_color: bool = False,
     alpha: float = 1.0,
     modifier_name: str = "GeometryNodes",
     trigger_rebuild: bool = True,
 ) -> Dict[str, object]:
-    """Create a new Door It! Interior object at `location` and configure its parameters.
+    """Create a new Door It! Interior object at ``location`` and configure its parameters.
 
-    If an object with `name` already exists in the blend file but is not part of the active
-    scene it will be linked in, moved to `location` and have the requested settings applied.
+    If an object with ``name`` already exists in the blend file but is not part of the active
+    scene it will be linked in, moved to ``location`` and have the requested settings applied.
     If it is already present in the scene the call becomes a no-op.
     """
     scene = bpy.context.scene
@@ -211,11 +260,15 @@ def create_door(
         if not in_scene:
             scene.collection.objects.link(existing_obj)
             existing_obj.location = location_vec
-            settings_summary = apply_door_settings(
+            settings_summary = apply_interior_door_settings(
                 width=width,
                 height=height,
                 door_type=door_type,
                 randomize_type=randomize_type,
+                handle_type=handle_type,
+                randomize_handle=randomize_handle,
+                material=material,
+                randomize_material=randomize_material,
                 paint_color=paint_color,
                 randomize_color=randomize_color,
                 alpha=alpha,
@@ -278,11 +331,15 @@ def create_door(
     door_object.location = location_vec
     door_object.name = name
 
-    settings_summary = apply_door_settings(
+    settings_summary = apply_interior_door_settings(
         width=width,
         height=height,
         door_type=door_type,
         randomize_type=randomize_type,
+        handle_type=handle_type,
+        randomize_handle=randomize_handle,
+        material=material,
+        randomize_material=randomize_material,
         paint_color=paint_color,
         randomize_color=randomize_color,
         alpha=alpha,
@@ -305,6 +362,10 @@ if __name__ == "__main__":
         "height": 2.032,          # 80 inches in meters
         "door_type": None,        # Set to an int to force a style, or keep None to randomize
         "randomize_type": True,   # Ignored when 'door_type' is provided
+        "handle_type": None,      # Handle style index; None to randomize
+        "randomize_handle": True,
+        "material": None,         # Material preset index; None to randomize
+        "randomize_material": True,
         "paint_color": None,      # Provide (R, G, B[, A]) or leave None to randomize
         "randomize_color": True,  # Ignored when 'paint_color' is provided
         "alpha": 1.0,             # Alpha channel for randomized colors
@@ -318,10 +379,10 @@ if __name__ == "__main__":
         **SETTINGS,
     }
 
-    created = create_door(**NEW_DOOR)
+    created = create_interior_door(**NEW_DOOR)
     print("Create door summary:", created)
 
     if created["created"] is False and bpy.data.objects.get(created["object"]):
         # Optionally re-run settings on the already existing door.
-        applied = apply_door_settings(obj=bpy.data.objects[created["object"]], **SETTINGS)
+        applied = apply_interior_door_settings(obj=bpy.data.objects[created["object"]], **SETTINGS)
         print("Updated existing Door It! Interior settings:", applied)
